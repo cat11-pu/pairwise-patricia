@@ -62,7 +62,7 @@ class RadixTree:
             child = node.children.get(key[offset])
             if child is None:
                 break
-            if self._common(child.label, key[offset:]) < 1:
+            if not key.startswith(child.label, offset):
                 break
             offset += len(child.label)
             node = child
@@ -71,7 +71,7 @@ class RadixTree:
     def _exact(self, key):
         """恰好存储 `key` 的结点；没有则返回 None。"""
         node, offset = self._locate(key)
-        if node.value is not None:
+        if offset == len(key) and node.value is not None:
             return node
         return None
 
@@ -87,7 +87,7 @@ class RadixTree:
         pairs = []
         if node.value is not None:
             pairs.append((base, node.value))
-        for first in sorted(node.children, reverse=True):
+        for first in sorted(node.children):
             child = node.children[first]
             pairs.extend(self._collect(child, base + child.label))
         return pairs
@@ -111,6 +111,8 @@ class RadixTree:
         node = self.root
         offset = 0
         best = None
+        if node.value is not None:
+            best = ("", node.value)
         while offset < len(key):
             child = node.children.get(key[offset])
             if child is None:
@@ -119,8 +121,8 @@ class RadixTree:
                 break
             offset += len(child.label)
             node = child
-        if node.value is not None:
-            best = (key[:offset], node.value)
+            if node.value is not None:
+                best = (key[:offset], node.value)
         return best
 
     def prefix_keys(self, prefix):
@@ -148,7 +150,8 @@ class RadixTree:
         node, offset = self._locate(key)
         rest = key[offset:]
         if not rest:
-            self.size += 1
+            if node.value is None:
+                self.size += 1
             node.value = value
             return
         child = node.children.get(rest[0])
@@ -158,7 +161,7 @@ class RadixTree:
             return
         label = child.label
         common = self._common(label, rest)
-        middle = Node(label)
+        middle = Node(label[:common])
         middle.parent = node
         node.children[rest[0]] = middle
         child.label = label[common:]
@@ -176,9 +179,9 @@ class RadixTree:
         node = self._exact(key)
         if node is None:
             return False
-        self._compress(node)
         node.value = None
         self.size -= 1
+        self._compress(node)
         return True
 
     def _compress(self, node):
@@ -189,5 +192,12 @@ class RadixTree:
             if current.value is None:
                 if not current.children:
                     del parent.children[current.label[0]]
+                    current.parent = None
+                elif len(current.children) == 1:
+                    child = next(iter(current.children.values()))
+                    child.label = current.label + child.label
+                    child.parent = parent
+                    parent.children[child.label[0]] = child
+                    current.children = {}
                     current.parent = None
             current = parent
